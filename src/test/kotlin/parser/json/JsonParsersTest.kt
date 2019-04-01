@@ -16,7 +16,7 @@ class JsonParsersTest {
             .isEqualTo(Success(JNull, State(input = "null", col = 4, pos = 4)))
 
         assertThat(jNull().run(State("nulp")))
-            .isEqualTo(Failure<JNull>(UnexpectedToken(label = "null", char = 'p', line = 0, col = 3)))
+            .isEqualTo(Failure(UnexpectedToken(label = "null", char = 'p', line = 0, col = 3)))
     }
 
     @Test
@@ -29,37 +29,7 @@ class JsonParsersTest {
             .isEqualTo(Success(JBool(false), State(input = "false", col = 5, pos = 5)))
 
         assertThat(jBool().run(State("truf")))
-            .isEqualTo(Failure<JBool>(UnexpectedToken(label = "bool", char = 't', line = 0, col = 0)))
-    }
-
-    @Test
-    fun `jUnescapedChar Parser`() {
-        assertThat(jUnescapedChar().run(State("a")))
-            .isEqualTo(Success('a', State(input = "a", col = 1, pos = 1)))
-
-        assertThat(jUnescapedChar().run(State("\\")))
-            .isEqualTo(Failure<Char>(UnexpectedToken(label = "char", char = '\\', line = 0, col = 0)))
-
-        assertThat(jUnescapedChar().run(State("\"")))
-            .isEqualTo(Failure<Char>(UnexpectedToken(label = "char", char = '\"', line = 0, col = 0)))
-    }
-
-    @Test
-    fun `jEscapedChar Parser`() {
-        assertThat(jEscapedChar().run(State("\\\\")))
-            .isEqualTo(Success('\\', State(input = "\\\\", col = 2, pos = 2)))
-
-        assertThat(jEscapedChar().run(State("\\t")))
-            .isEqualTo(Success('\t', State(input = "\\t", col = 2, pos = 2)))
-
-        assertThat(jEscapedChar().run(State("a")))
-            .isEqualTo(Failure<Char>(UnexpectedToken(label = "escaped-char", char = 'a', line = 0, col = 0)))
-    }
-
-    @Test
-    fun `jUnicodeChar Parser`() {
-        assertThat(jUnicodeChar().run(State("\\u263A")))
-            .isEqualTo(Success('\u263A', State(input = "\\u263A", col = 6, pos = 6)))
+            .isEqualTo(Failure(UnexpectedToken(label = "bool", char = 't', line = 0, col = 0)))
     }
 
     @Test
@@ -82,6 +52,22 @@ class JsonParsersTest {
         assertThat(jString().run(State("\"ab\\u263Ade\"")))
             .isEqualTo(Success(JString("ab☺de"), State(input = "\"ab\\u263Ade\"", col = 12, pos = 12)))
 
+    }
+
+    @Test
+    fun `jString Parser with more cases`() {
+
+        val backSlash = "\"\\\\\""
+        assertThat(jString().run(State(backSlash)))
+            .isEqualTo(Success(JString("\\"), State(input = backSlash, col = 4, pos = 4)))
+
+        val tab = "\"\\t\""
+        assertThat(jString().run(State(tab)))
+            .isEqualTo(Success(JString("\t"), State(input = tab, col = 4, pos = 4)))
+
+        val unicode = "\"\\u263A\""
+        assertThat(jString().run(State(unicode)))
+            .isEqualTo(Success(JString("\u263A"), State(input = unicode, col = 8, pos = 8)))
     }
 
     @Test
@@ -126,7 +112,7 @@ class JsonParsersTest {
             )
 
         assertThat(jArray().run(State("[1, 2, ]")))
-            .isEqualTo(Failure<JArray>(UnexpectedToken("array", ',', 0, 5)))
+            .isEqualTo(Failure(UnexpectedToken("array", ',', 0, 5)))
 
     }
 

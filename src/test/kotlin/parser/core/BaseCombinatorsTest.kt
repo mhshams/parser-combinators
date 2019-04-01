@@ -6,52 +6,21 @@ import org.junit.Test
 class BaseCombinatorsTest {
 
     @Test
-    fun `Label Combinator with label works as expected`() {
-
-        assertThat((pChar('A') label "Labeled").run(State("ZBC")))
-            .isEqualTo(Failure<Char>(UnexpectedToken(label = "Labeled", char = 'Z', line = 0, col = 0)))
-    }
-
-    @Test
-    fun `Map Combinator with a transformer works as expected`() {
-        val parser = pChar('2') map { it.toInt() - 48 }
-
-        assertThat(parser.run(State("23")))
-            .isEqualTo(Success(2, State(input = "23", pos = 1, col = 1)))
-
-        assertThat(parser.run(State("32")))
-            .isEqualTo(Failure<Any>(UnexpectedToken(label = "2", char = '3', line = 0, col = 0)))
-    }
-
-    @Test
-    fun `Map Combinator with fixed value works as expected`() {
-
-        assertThat((pChar('2') map (4)).run(State("23")))
-            .isEqualTo(Success(4, State(input = "23", pos = 1, col = 1)))
-
-        assertThat((pChar('T') map (true)).run(State("T")))
-            .isEqualTo(Success(true, State(input = "T", pos = 1, col = 1)))
-
-        assertThat((pChar('F') map (false)).run(State("T")))
-            .isEqualTo(Failure<Any>(UnexpectedToken(label = "F", char = 'T', line = 0, col = 0)))
-    }
-
-    @Test
-    fun `And Combinator works as expected`() {
+    fun `And Combinator`() {
         val parser = pChar('A') and pChar('2')
 
         assertThat(parser.run(State("A2")))
             .isEqualTo(Success(listOf('A', '2'), State(input = "A2", pos = 2, col = 2)))
 
         assertThat(parser.run(State("B2")))
-            .isEqualTo(Failure<Any>(UnexpectedToken(label = "A and 2", char = 'B', line = 0, col = 0)))
+            .isEqualTo(Failure(UnexpectedToken(label = "A and 2", char = 'B', line = 0, col = 0)))
 
         assertThat(parser.run(State("A3")))
-            .isEqualTo(Failure<Any>(UnexpectedToken(label = "A and 2", char = '3', line = 0, col = 1)))
+            .isEqualTo(Failure(UnexpectedToken(label = "A and 2", char = '3', line = 0, col = 1)))
     }
 
     @Test
-    fun `And Combinator works with more complex parsers`() {
+    fun `Multiple And Combinator`() {
         val parser = pChar('A') and pChar('2') and pChar('C')
 
         assertThat(parser.run(State("A2C")))
@@ -59,7 +28,7 @@ class BaseCombinatorsTest {
     }
 
     @Test
-    fun `And Combinator works with other complex parsers`() {
+    fun `Another example of Multiple And Combinator`() {
         val parser = pChar('C') and pChar('A') and pChar('2')
 
         assertThat(parser.run(State("CA2")))
@@ -67,7 +36,7 @@ class BaseCombinatorsTest {
     }
 
     @Test
-    fun `And Combinator works with even more complex parsers`() {
+    fun `Even more example of Multiple And Combinator`() {
         val parser = pChar('A') and pChar('1') and pChar('B') and pChar('2')
 
         assertThat(parser.run(State("A1B2")))
@@ -75,7 +44,7 @@ class BaseCombinatorsTest {
     }
 
     @Test
-    fun `Or Combinator works as expected`() {
+    fun `Or Combinator`() {
         val parser = pChar('A') or pChar('2')
 
         assertThat(parser.run(State("A2")))
@@ -85,6 +54,22 @@ class BaseCombinatorsTest {
             .isEqualTo(Success('2', State(input = "2A", pos = 1, col = 1)))
 
         assertThat(parser.run(State("B2")))
-            .isEqualTo(Failure<Any>(UnexpectedToken(label = "A or 2", char = 'B', line = 0, col = 0)))
+            .isEqualTo(Failure(UnexpectedToken(label = "A or 2", char = 'B', line = 0, col = 0)))
+    }
+
+    @Test
+    fun `AndWithoutLeft Combinator`() {
+        val parser = pChar('A') andr pChar('2')
+
+        assertThat(parser.run(State("A2")))
+            .isEqualTo(Success('2', State(input = "A2", pos = 2, col = 2)))
+    }
+
+    @Test
+    fun `AndWithoutRight Combinator`() {
+        val parser = pChar('A') andl pChar('2')
+
+        assertThat(parser.run(State("A2")))
+            .isEqualTo(Success('A', State(input = "A2", pos = 2, col = 2)))
     }
 }

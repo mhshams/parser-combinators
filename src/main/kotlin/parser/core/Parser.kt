@@ -1,5 +1,7 @@
 package parser.core
 
+import kotlin.NoSuchElementException
+
 data class State(
     val input: String = "",
     val line: Int = 0,
@@ -24,7 +26,7 @@ data class Success<T>(
     val state: State
 ) : Result<T>()
 
-data class Failure<T>(val error: ParserError) : Result<T>()
+data class Failure(val error: ParserError) : Result<Nothing>()
 
 sealed class ParserError(open val label: String? = null) {
     abstract fun relabel(label: String?): ParserError
@@ -53,10 +55,38 @@ data class NoMoreInput(
         """Error parsing ${label ?: "unknown"}. No more input"""
 }
 
+sealed class Maybe<T : Any> {
+    companion object {
+        fun <T : Any> just(value: T): Maybe<T> = Just(value)
+
+        @Suppress("UNCHECKED_CAST")
+        fun <T : Any> none(): Maybe<T> = None as Maybe<T>
+    }
+
+    abstract fun get(): T
+}
+
+data class Just<T : Any>(private val value: T) : Maybe<T>() {
+    override fun get() = value
+}
+
+object None : Maybe<Nothing>() {
+    override fun get() = throw NoSuchElementException("")
+}
+
 class Parser<T : Any>(
     private val label: String? = null,
     private val parse: (State) -> Result<out T>
 ) {
+    companion object {
+        fun concat(left: Any, right: Any): List<Any> =
+            listOf(left, right)
+                .filter { it !is None }
+                .map { if (it is Just<*>) it.get() else it }
+                .map { if (it is List<*>) it.filterNotNull() else listOf(it) }
+                .flatten()
+    }
+
     operator fun invoke(state: State): Result<out T> = parse(state)
 
     fun run(state: State): Result<out T> = this(state)
@@ -65,7 +95,7 @@ class Parser<T : Any>(
         Parser(label) { state ->
             when (val result = this(state)) {
                 is Success -> result
-                is Failure -> Failure<T>(result.error.relabel(label))
+                is Failure -> Failure(result.error.relabel(label))
             }
         }
 
@@ -73,7 +103,7 @@ class Parser<T : Any>(
         Parser { state ->
             when (val result = this.invoke(state)) {
                 is Success -> Success(transformer(result.value), result.state)
-                is Failure -> Failure<R>(result.error.relabel(label))
+                is Failure -> Failure(result.error.relabel(label))
             }
         }
 
@@ -81,14 +111,14 @@ class Parser<T : Any>(
         Parser { state ->
             when (val result = this.invoke(state)) {
                 is Success -> Success(r, result.state)
-                is Failure -> Failure<R>(result.error.relabel(label))
+                is Failure -> Failure(result.error.relabel(label))
             }
         }
 
     private fun <R : Any> andThen(that: Parser<R>): Parser<Pair<T, R>> =
         Parser { state ->
             when (val thisResult = this(state)) {
-                is Failure -> Failure<Pair<T, R>>(error = thisResult.error)
+                is Failure -> Failure(error = thisResult.error)
                 is Success ->
                     when (val thatResult = that(thisResult.state)) {
                         is Failure -> Failure(error = thatResult.error)
@@ -106,19 +136,13 @@ class Parser<T : Any>(
     infix fun andl(that: Parser<out Any>): Parser<T> =
         andThen(that) map { it.first } label "${this.label} andl ${that.label}"
 
-    infix fun or(that: Parser<out Any>): Parser<out Any> =
+    infix fun or(that: Parser<out T>): Parser<T> =
         Parser { state ->
             when (val thisResult = this(state)) {
                 is Success -> thisResult
                 is Failure -> that(state)
             }
         } label "${this.label} or ${that.label}"
-
-    private fun concat(left: Any, right: Any): List<Any> =
-        listOf(left, right)
-            .filter { it !is Unit }
-            .map { if (it is List<*>) it.filterNotNull() else listOf(it) }
-            .flatten()
 }
 
 //* Combinators *//
@@ -126,40 +150,39 @@ class Parser<T : Any>(
 fun satisfy(label: String, predicate: (Char) -> Boolean): Parser<Char> =
     Parser { state ->
         when {
-            state.eof() -> Failure<Char>(NoMoreInput(label))
+            state.eof() -> Failure(NoMoreInput(label))
             predicate(state.char()) -> Success(state.char(), state.next())
             else -> Failure(UnexpectedToken(label, state.char(), state.line, state.col))
         }
     } label label
 
-fun any(parsers: List<Parser<out Any>>) = parsers.reduce { l, r -> l or r } label "any"
+fun <T : Any> choice(parsers: List<Parser<T>>): Parser<out T> = parsers.reduce { l, r -> l or r } label "choice"
 
-fun any(vararg parser: Parser<out Any>) = any(parser.toList())
+fun <T : Any> choice(vararg parser: Parser<T>) = choice(parser.toList())
 
-fun all(parsers: List<Parser<out Any>>): Parser<List<Any>> {
+fun sequence(parsers: List<Parser<out Any>>): Parser<List<Any>> {
     val emptyParser: Parser<List<Any>> = Parser { Success<List<Any>>(emptyList(), it) }
 
-    return parsers.fold(emptyParser) { l, r -> l and r } label "all"
+    return parsers.fold(emptyParser) { l, r -> l and r } label "sequence"
 }
 
-fun all(vararg parser: Parser<out Any>) = all(parser.toList())
+fun sequence(vararg parser: Parser<out Any>) = sequence(parser.toList())
 
-fun optional(parser: Parser<out Any>): Parser<out Any> =
-    parser or Parser { Success(Unit, it) } label "zero-or-more"
+fun <T : Any> optional(parser: Parser<T>): Parser<Maybe<T>> {
+    val none = Parser { Success(Maybe.none<T>(), it) }
+    val just = parser map { Maybe.just(it) }
+
+    return just or none label "zero-or-more"
+}
 
 fun zeroOrMore(parser: Parser<out Any>): Parser<List<Any>> {
-    fun concat(left: Any, right: Any): List<Any> =
-        listOf(left, right)
-            .filter { it !is Unit }
-            .map { if (it is List<*>) it.filterNotNull() else listOf(it) }
-            .flatten()
 
     fun zeroOrMoreParser(state: State): Success<List<Any>> =
         when (val first = parser(state)) {
             is Failure -> Success(emptyList(), state)
             is Success ->
                 zeroOrMoreParser(first.state).let {
-                    Success(concat(first.value, it.value), it.state)
+                    Success(Parser.concat(first.value, it.value), it.state)
                 }
         }
 
@@ -171,12 +194,15 @@ fun oneOrMore(parser: Parser<out Any>): Parser<List<Any>> =
 
 //* Parsers *//
 
+fun pChar(c: Char): Parser<Char> =
+    satisfy(c.toString()) { it == c }
+
 fun <T : Any> pBetween(left: Parser<out Any>, middle: Parser<T>, right: Parser<out Any>): Parser<T> =
     left andr middle andl right label "between"
 
-fun pAnyOf(chars: List<Char>) = any(chars.map { pChar(it) }) label "any-of $chars"
+fun pAnyOf(chars: List<Char>) = choice(chars.map { pChar(it) }) label "choice-of $chars"
 
-fun pAnyOf(vararg chars: Char) = pAnyOf(chars.toList()) label "any-of $chars"
+fun pAnyOf(vararg chars: Char) = pAnyOf(chars.toList()) label "choice-of $chars"
 
 fun pLowercase() = pAnyOf(('a'..'z').toList()) label "lowercase"
 
@@ -190,27 +216,27 @@ fun pDigits(): Parser<List<Any>> = oneOrMore(pDigit()) label "digits"
 
 //** Primitive Type Parsers **//
 
-fun pChar(c: Char): Parser<Char> =
-    satisfy(c.toString()) { it == c }
-
 fun pString(string: String): Parser<String> =
-    all(string.map(::pChar)) map { it.joinToString("") } label string
+    sequence(string.map(::pChar)) map { it.joinToString("") } label string
 
-fun pBoolean(): Parser<Boolean> =
-    pString("true") or pString("false") map { it.toString().toBoolean() } label "boolean"
+fun pBoolean(): Parser<Boolean> {
+    val pTrue = pString("true") map true
+    val pFalse = pString("false") map false
 
-fun pSign(): Parser<Char> =
-    pChar('+') or pChar('-') map { it as Char }
+    return pTrue or pFalse label "boolean"
+}
+
+fun pSign(): Parser<out Char> = pAnyOf('-', '+')
 
 fun pInt(): Parser<Int> =
     (optional(pSign()) and pDigits()) map { it.joinToString("").toInt() } label "int"
 
 fun pNumber(): Parser<Double> {
-    fun e() = pChar('e') or pChar('E')
-    fun optSign() = optional(pSign())
-    fun intPart() = optSign() and pDigits()
-    fun optFraction() = optional(pChar('.') and pDigits())
-    fun optExponent() = optional(e() and optSign() and pDigits())
+    val e = pAnyOf('e', 'E')
+    val optSign = optional(pSign())
+    val intPart = optSign and pDigits()
+    val optFraction = optional(pChar('.') and pDigits())
+    val optExponent = optional(e and intPart)
 
-    return (intPart() and optFraction() and optExponent()) map { it.joinToString("").toDouble() } label "number"
+    return (intPart and optFraction and optExponent) map { it.joinToString("").toDouble() } label "number"
 }
