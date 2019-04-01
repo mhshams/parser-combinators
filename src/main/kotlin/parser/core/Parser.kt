@@ -77,6 +77,14 @@ class Parser<T : Any>(
             }
         }
 
+    infix fun <R : Any> map(r: R): Parser<R> =
+        Parser { state ->
+            when (val result = this.invoke(state)) {
+                is Success -> Success(r, result.state)
+                is Failure -> Failure<R>(result.error.relabel(label))
+            }
+        }
+
     infix fun and(that: Parser<out Any>): Parser<List<Any>> =
         Parser { state ->
             when (val thisResult = this(state)) {

@@ -13,7 +13,7 @@ class BaseCombinatorsTest {
     }
 
     @Test
-    fun `Map Combinator works as expected`() {
+    fun `Map Combinator with a transformer works as expected`() {
         val parser = pChar('2') map { it.toInt() - 48 }
 
         assertThat(parser.run(State("23")))
@@ -21,6 +21,19 @@ class BaseCombinatorsTest {
 
         assertThat(parser.run(State("32")))
             .isEqualTo(Failure<Any>(UnexpectedToken(label = "2", char = '3', line = 0, col = 0)))
+    }
+
+    @Test
+    fun `Map Combinator with fixed value works as expected`() {
+
+        assertThat((pChar('2') map { 4 }).run(State("23")))
+            .isEqualTo(Success(4, State(input = "23", pos = 1, col = 1)))
+
+        assertThat((pChar('T') map { true }).run(State("T")))
+            .isEqualTo(Success(true, State(input = "T", pos = 1, col = 1)))
+
+        assertThat((pChar('F') map { false }).run(State("T")))
+            .isEqualTo(Failure<Any>(UnexpectedToken(label = "F", char = 'T', line = 0, col = 0)))
     }
 
     @Test
