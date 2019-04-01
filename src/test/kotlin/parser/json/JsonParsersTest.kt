@@ -1,90 +1,203 @@
-package parser.core
+package parser.json
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Test
+import parser.core.Failure
+import parser.core.State
+import parser.core.Success
+import parser.core.UnexpectedToken
 
-class PrimitiveParsersTest {
+class JsonParsersTest {
 
     @Test
-    fun `Char Parser`() {
+    fun `jNull Parser`() {
 
-        assertThat(pChar('A').run(State("ABC")))
-            .isEqualTo(Success('A', State(input = "ABC", col = 1, pos = 1)))
+        assertThat(jNull().run(State("null")))
+            .isEqualTo(Success(JNull, State(input = "null", col = 4, pos = 4)))
 
-        assertThat(pChar('A').run(State("ZBC")))
-            .isEqualTo(Failure<Char>(UnexpectedToken(label = "A", char = 'Z', line = 0, col = 0)))
+        assertThat(jNull().run(State("nulp")))
+            .isEqualTo(Failure<JNull>(UnexpectedToken(label = "null", char = 'p', line = 0, col = 3)))
     }
 
     @Test
-    fun `String Parser`() {
+    fun `jBool Parser`() {
 
-        assertThat(pString("Foo").run(State("Foo")))
-            .isEqualTo(Success("Foo", State(input = "Foo", col = 3, pos = 3)))
+        assertThat(jBool().run(State("true")))
+            .isEqualTo(Success(JBool(true), State(input = "true", col = 4, pos = 4)))
 
-        assertThat(pString("Foo").run(State("FoD")))
-            .isEqualTo(Failure<String>(UnexpectedToken(label = "Foo", char = 'D', line = 0, col = 2)))
+        assertThat(jBool().run(State("false")))
+            .isEqualTo(Success(JBool(false), State(input = "false", col = 5, pos = 5)))
+
+        assertThat(jBool().run(State("truf")))
+            .isEqualTo(Failure<JBool>(UnexpectedToken(label = "bool", char = 't', line = 0, col = 0)))
     }
 
     @Test
-    fun `Boolean Parser`() {
+    fun `jUnescapedChar Parser`() {
+        assertThat(jUnescapedChar().run(State("a")))
+            .isEqualTo(Success('a', State(input = "a", col = 1, pos = 1)))
 
-        assertThat(pBoolean().run(State("true")))
-            .isEqualTo(Success(true, State(input = "true", col = 4, pos = 4)))
+        assertThat(jUnescapedChar().run(State("\\")))
+            .isEqualTo(Failure<Char>(UnexpectedToken(label = "char", char = '\\', line = 0, col = 0)))
 
-        assertThat(pBoolean().run(State("false")))
-            .isEqualTo(Success(false, State(input = "false", col = 5, pos = 5)))
-
-        assertThat(pBoolean().run(State("falsh")))
-            .isEqualTo(Failure<Boolean>(UnexpectedToken(label = "boolean", char = 'h', line = 0, col = 4)))
+        assertThat(jUnescapedChar().run(State("\"")))
+            .isEqualTo(Failure<Char>(UnexpectedToken(label = "char", char = '\"', line = 0, col = 0)))
     }
 
     @Test
-    fun `Int Parser`() {
+    fun `jEscapedChar Parser`() {
+        assertThat(jEscapedChar().run(State("\\\\")))
+            .isEqualTo(Success('\\', State(input = "\\\\", col = 2, pos = 2)))
 
-        assertThat(pInt().run(State("123")))
-            .isEqualTo(Success(123, State(input = "123", col = 3, pos = 3)))
+        assertThat(jEscapedChar().run(State("\\t")))
+            .isEqualTo(Success('\t', State(input = "\\t", col = 2, pos = 2)))
 
-        assertThat(pInt().run(State("123A")))
-            .isEqualTo(Success(123, State(input = "123A", col = 3, pos = 3)))
-
-        assertThat(pInt().run(State("+0")))
-            .isEqualTo(Success(0, State(input = "+0", col = 2, pos = 2)))
-
-        assertThat(pInt().run(State("-0")))
-            .isEqualTo(Success(0, State(input = "-0", col = 2, pos = 2)))
-
-        assertThat(pInt().run(State("-1")))
-            .isEqualTo(Success(-1, State(input = "-1", col = 2, pos = 2)))
-
-        assertThat(pInt().run(State("+A")))
-            .isEqualTo(Failure<Int>(UnexpectedToken(label = "int", char = 'A', line = 0, col = 1)))
+        assertThat(jEscapedChar().run(State("a")))
+            .isEqualTo(Failure<Char>(UnexpectedToken(label = "escaped-char", char = 'a', line = 0, col = 0)))
     }
 
     @Test
-    fun `Number Parser`() {
+    fun `jUnicodeChar Parser`() {
+        assertThat(jUnicodeChar().run(State("\\u263A")))
+            .isEqualTo(Success('\u263A', State(input = "\\u263A", col = 6, pos = 6)))
+    }
 
-        assertThat(pNumber().run(State("12.34")))
-            .isEqualTo(Success(12.34, State(input = "12.34", col = 5, pos = 5)))
+    @Test
+    fun `jString Parser`() {
+        assertThat(jString().run(State("\"ABC\"")))
+            .isEqualTo(Success(JString("ABC"), State(input = "\"ABC\"", col = 5, pos = 5)))
 
-        assertThat(pNumber().run(State("0.34")))
-            .isEqualTo(Success(0.34, State(input = "0.34", col = 4, pos = 4)))
+        assertThat(jString().run(State("\"\"")))
+            .isEqualTo(Success(JString(""), State(input = "\"\"", col = 2, pos = 2)))
 
-        assertThat(pNumber().run(State("-0.34")))
-            .isEqualTo(Success(-0.34, State(input = "-0.34", col = 5, pos = 5)))
+        assertThat(jString().run(State("\"a\"")))
+            .isEqualTo(Success(JString("a"), State(input = "\"a\"", col = 3, pos = 3)))
 
-        assertThat(pNumber().run(State("-12.34")))
-            .isEqualTo(Success(-12.34, State(input = "-12.34", col = 6, pos = 6)))
+        assertThat(jString().run(State("\"ab\"")))
+            .isEqualTo(Success(JString("ab"), State(input = "\"ab\"", col = 4, pos = 4)))
 
-        assertThat(pNumber().run(State("12.34E5")))
-            .isEqualTo(Success(1234000.0, State(input = "12.34E5", col = 7, pos = 7)))
+        assertThat(jString().run(State("\"ab\\tde\"")))
+            .isEqualTo(Success(JString("ab\tde"), State(input = "\"ab\\tde\"", col = 8, pos = 8)))
 
-        assertThat(pNumber().run(State("-12.34e5")))
-            .isEqualTo(Success(-1234000.0, State(input = "-12.34e5", col = 8, pos = 8)))
+        assertThat(jString().run(State("\"ab\\u263Ade\"")))
+            .isEqualTo(Success(JString("ab☺de"), State(input = "\"ab\\u263Ade\"", col = 12, pos = 12)))
 
-        assertThat(pNumber().run(State("-12.34e-7AB")))
-            .isEqualTo(Success(-1.234e-6, State(input = "-12.34e-7AB", col = 9, pos = 9)))
+    }
 
-        assertThat(pNumber().run(State("+A")))
-            .isEqualTo(Failure<Int>(UnexpectedToken(label = "number", char = 'A', line = 0, col = 1)))
+    @Test
+    fun `jNumber Parser`() {
+        assertThat(jNumber().run(State("123")))
+            .isEqualTo(Success(JNumber(123.0), State(input = "123", col = 3, pos = 3)))
+
+        assertThat(jNumber().run(State("-123")))
+            .isEqualTo(Success(JNumber(-123.0), State(input = "-123", col = 4, pos = 4)))
+
+        assertThat(jNumber().run(State("123.4")))
+            .isEqualTo(Success(JNumber(123.4), State(input = "123.4", col = 5, pos = 5)))
+    }
+
+    @Test
+    fun `jArray Parser`() {
+        assertThat(jArray().run(State("[1, 2 ]")))
+            .isEqualTo(Success(JArray(listOf(JNumber(1), JNumber(2))), State(input = "[1, 2 ]", col = 7, pos = 7)))
+
+        assertThat(jArray().run(State("[ true\t,     false   ]")))
+            .isEqualTo(
+                Success(
+                    JArray(listOf(JBool(true), JBool(false))),
+                    State(input = "[ true\t,     false   ]", col = 22, pos = 22)
+                )
+            )
+
+        assertThat(jArray().run(State("[\"person\", null]")))
+            .isEqualTo(
+                Success(
+                    JArray(listOf(JString("person"), JNull)),
+                    State(input = "[\"person\", null]", col = 16, pos = 16)
+                )
+            )
+
+        assertThat(jArray().run(State("[[1, 2]]")))
+            .isEqualTo(
+                Success(
+                    JArray(listOf(JArray(listOf(JNumber(1), JNumber(2))))),
+                    State(input = "[[1, 2]]", col = 8, pos = 8)
+                )
+            )
+
+        assertThat(jArray().run(State("[1, 2, ]")))
+            .isEqualTo(Failure<JArray>(UnexpectedToken("array", ',', 0, 5)))
+
+    }
+
+    @Test
+    fun `jObject Parser`() {
+        """{"a": 2 }""".let { input ->
+            assertThat(jObject().run(State(input)))
+                .isEqualTo(
+                    Success(
+                        JObject(
+                            mapOf(
+                                "a" to JNumber(2)
+                            )
+                        ), State(input = input, col = 9, pos = 9)
+                    )
+                )
+        }
+
+        """{"a": 2, "foo": "bar" }""".let { input ->
+            assertThat(jObject().run(State(input)))
+                .isEqualTo(
+                    Success(
+                        JObject(
+                            mapOf(
+                                "a" to JNumber(2),
+                                "foo" to JString("bar")
+                            )
+                        ), State(input = input, col = 23, pos = 23)
+                    )
+                )
+        }
+    }
+
+    @Test
+    fun `full json object`() {
+        val json = """
+            {
+                "name" : "Scott",
+                "isMale" : true,
+                "bday" : {
+                    "year":2001,
+                    "month":12,
+                    "day":25
+                },
+                "favouriteColors" : [
+                    "blue",
+                    "green"
+                ]
+            }""".trimIndent()
+
+        val expectedObject = JObject(
+            mapOf(
+                "name" to JString("Scott"),
+                "isMale" to JBool(true),
+                "bday" to JObject(
+                    mapOf(
+                        "year" to JNumber(2001),
+                        "month" to JNumber(12),
+                        "day" to JNumber(25)
+                    )
+                ),
+                "favouriteColors" to JArray(
+                    listOf(
+                        JString("blue"),
+                        JString("green")
+                    )
+                )
+            )
+        )
+
+        assertThat(jObject().run(State(json)))
+            .isEqualTo(Success(expectedObject, State(json, 12, 1, 190)))
     }
 }

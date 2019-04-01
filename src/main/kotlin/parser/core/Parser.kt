@@ -85,17 +85,26 @@ class Parser<T : Any>(
             }
         }
 
-    infix fun and(that: Parser<out Any>): Parser<List<Any>> =
+    private fun <R : Any> andThen(that: Parser<R>): Parser<Pair<T, R>> =
         Parser { state ->
             when (val thisResult = this(state)) {
-                is Failure -> Failure<List<Any>>(error = thisResult.error)
+                is Failure -> Failure<Pair<T, R>>(error = thisResult.error)
                 is Success ->
                     when (val thatResult = that(thisResult.state)) {
                         is Failure -> Failure(error = thatResult.error)
-                        is Success -> Success(concat(thisResult.value as Any, thatResult.value), thatResult.state)
+                        is Success -> Success(Pair(thisResult.value, thatResult.value), thatResult.state)
                     }
             }
-        } label "${this.label} and ${that.label}"
+        }
+
+    infix fun and(that: Parser<out Any>): Parser<List<Any>> =
+        andThen(that) map { concat(it.first, it.second) } label "${this.label} and ${that.label}"
+
+    infix fun <R : Any> andr(that: Parser<R>): Parser<R> =
+        andThen(that) map { it.second } label "${this.label} andr ${that.label}"
+
+    infix fun andl(that: Parser<out Any>): Parser<T> =
+        andThen(that) map { it.first } label "${this.label} andl ${that.label}"
 
     infix fun or(that: Parser<out Any>): Parser<out Any> =
         Parser { state ->
@@ -104,12 +113,6 @@ class Parser<T : Any>(
                 is Failure -> that(state)
             }
         } label "${this.label} or ${that.label}"
-
-    infix fun andr(right: Parser<out Any>): Parser<out Any> =
-        (this and right) map { list -> list.last() }
-
-    infix fun andl(right: Parser<out Any>): Parser<out Any> =
-        (this and right) map { list -> list.first() }
 
     private fun concat(left: Any, right: Any): List<Any> =
         listOf(left, right)
@@ -168,7 +171,7 @@ fun oneOrMore(parser: Parser<out Any>): Parser<List<Any>> =
 
 //* Parsers *//
 
-fun pBetween(left: Parser<out Any>, middle: Parser<out Any>, right: Parser<out Any>): Parser<out Any> =
+fun <T : Any> pBetween(left: Parser<out Any>, middle: Parser<T>, right: Parser<out Any>): Parser<T> =
     left andr middle andl right label "between"
 
 fun pAnyOf(chars: List<Char>) = any(chars.map { pChar(it) }) label "any-of $chars"
