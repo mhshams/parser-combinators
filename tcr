@@ -1,0 +1,1 @@
+./gradlew clean test && git add . && git commit -m'wip' || git reset --hard
